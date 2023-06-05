@@ -3,9 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, List
 
-import marshmallow
-from marshmallow_dataclass import NewType
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 def deserialize_timestamp(v: str) -> datetime.datetime:
@@ -33,7 +31,7 @@ def serialize_timestamp(val: Any) -> str:
         return str(val)
 
 
-class DateTime(marshmallow.fields.DateTime):
+class DateTime(BaseModel):
     """
     Extend DateTime support to add a "timestamp" format.
 
@@ -41,30 +39,21 @@ class DateTime(marshmallow.fields.DateTime):
     to and from UNIX timestamps.
     """
 
-    SERIALIZATION_FUNCS = marshmallow.fields.DateTime.SERIALIZATION_FUNCS.copy()
-    DESERIALIZATION_FUNCS = marshmallow.fields.DateTime.DESERIALIZATION_FUNCS.copy()
-    SERIALIZATION_FUNCS["timestamp"] = serialize_timestamp
-    DESERIALIZATION_FUNCS["timestamp"] = deserialize_timestamp
-
-    def _serialize(self, value, attr, obj, **kwargs):
-        """
-        When we serialize a UNIX timestamp, return it as a float.
-
-        Without doing this, we'd return UNIX timestamps as strings, which
-        isn't quite what we want.
-        """
-        result = super()._serialize(value, attr, obj, **kwargs)
-        data_format = self.format or self.DEFAULT_FORMAT
-
-        if data_format == "timestamp":
-            return float(result)
-        return result
-
-
-# A field that serializes datetime objects as UNIX timestamps.
-TimestampField = NewType(
-    "TimestampField", datetime.datetime, field=DateTime, format="timestamp"
-)
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+        
+    @classmethod
+    def validate(cls, value):
+        if isinstance(value, datetime.date):
+            return value
+        if isinstance(value, (float, int)):
+            return datetime.datetime.fromtimestamp(value)
+        raise ValueError("Not a valid datetime value.")
+    
+    @classmethod
+    def __modify_schema__(cls, field_schema):
+        field_schema.update(foramt="timestamp")
 
 
 class MetricUnit(Enum):
@@ -84,7 +73,6 @@ class GeoUnit(Enum):
     FT = "ft"
 
 
-@dataclass(frozen=True, eq=True)
 class Coordinate(BaseModel):
     """A coordiante pair"""
 
@@ -92,7 +80,6 @@ class Coordinate(BaseModel):
     lat: float
 
 
-@dataclass(frozen=True, eq=True)
 class Site(BaseModel):
     """A solar power installation"""
 
@@ -106,24 +93,21 @@ class Site(BaseModel):
     coordinate: Coordinate | None = None
 
 
-@dataclass(frozen=True, eq=True)
-class SiteCapacityTuple:
+class SiteCapacityTuple(BaseModel):
     """Capacity at a site."""
 
     capacity: float
     site_id: int
 
 
-@dataclass(frozen=True, eq=True)
-class CapacityReport:
+class CapacityReport(BaseModel):
     """A site capacity report."""
 
     highest_capacity: List[SiteCapacityTuple]
     lowest_capacity: List[SiteCapacityTuple]
 
 
-@dataclass(frozen=True, eq=True)
-class GeoQuery:
+class GeoQuery(BaseModel):
     """Parameter for a geo query."""
 
     coordinate: Coordinate
@@ -132,41 +116,37 @@ class GeoQuery:
     only_excess_capacity: bool = False
 
 
-@dataclass(frozen=True, eq=True)
-class Measurement:
+class Measurement(Measurement):
     """A measurement taken for a site."""
 
     site_id: int
     value: float
     metric_unit: MetricUnit
-    timestamp: TimestampField  # type: ignore
+    timestamp: datetime.datetime
 
 
-@dataclass(frozen=True, eq=True)
-class MeterReading:
+class MeterReading(BaseModel):
     """A reading taken from a site."""
 
     site_id: int
     wh_used: float
     wh_generated: float
     temp_c: float
-    timestamp: TimestampField
+    timestamp: datetime.datetime
 
     @property
     def current_capacity(self):
         return self.wh_generated - self.wh_used
 
 
-@dataclass(frozen=True, eq=True)
-class Plot:
+class Plot(BaseModel):
     """A plot of measurements."""
 
     measurements: List[Measurement]
     name: str
 
 
-@dataclass(frozen=True, eq=True)
-class SiteStats:
+class SiteStats(BaseModel):
     """Reporting stats for a site."""
 
     last_reporting_time: datetime.datetime
