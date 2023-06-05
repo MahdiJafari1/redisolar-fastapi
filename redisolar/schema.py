@@ -1,0 +1,2 @@
+class MeterReadingsSchema:
+    pass
